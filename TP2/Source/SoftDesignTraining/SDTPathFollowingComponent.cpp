@@ -5,6 +5,10 @@
 #include "NavigationSystem.h"
 
 #include "DrawDebugHelpers.h"
+#include "SDTAIController.h"
+#include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Kismet/GameplayStatics.h"
 
 USDTPathFollowingComponent::USDTPathFollowingComponent(const FObjectInitializer& ObjectInitializer)
 {
@@ -21,19 +25,42 @@ void USDTPathFollowingComponent::FollowPathSegment(float DeltaTime)
     const TArray<FNavPathPoint>& points = Path->GetPathPoints();
     const FNavPathPoint& segmentStart = points[MoveSegmentStartIndex];
     const FNavPathPoint& segmentEnd = points[MoveSegmentEndIndex];
+
+    DrawDebugSphere(GetWorld(), segmentStart.Location, 40.f, 8, FColor::Red);
+    DrawDebugSphere(GetWorld(), segmentEnd.Location, 40.f, 8, FColor::Yellow);
+
+    UpdateRotation(segmentEnd.Location, DeltaTime);  // update rotation has the same logic for jump
     
     if (SDTUtils::HasJumpFlag(segmentStart))
     {
         // Update jump along path / nav link proxy
+        AController* controller = GetOwner<AController>();
+        if (!controller) return;
+
+        APawn* pawn = controller->GetPawn();
+        if (!pawn) return;
+
+        const float DistanceToEnd = FVector::Dist(pawn->GetActorLocation(), segmentEnd.Location);
+
+        if (DistanceToEnd < 100.0f)
+        {
+            if (points.IsValidIndex(MoveSegmentEndIndex + 1))
+            {
+                // We've landed, but there are still points left on the path
+                SetMoveSegment(MoveSegmentEndIndex);
+            }
+            else
+            {
+                // We've reached the final destination
+                OnSegmentFinished();
+                OnPathFinished(EPathFollowingResult::Success);
+            }
+        }
     }
     else
     {
         // Update navigation along path (move along)
-        DrawDebugSphere(GetWorld(), segmentStart.Location, 40.f, 8, FColor::Red);
-        DrawDebugSphere(GetWorld(), segmentEnd.Location, 40.f, 8, FColor::Yellow);
-        
         MoveTowardsTarget(segmentEnd.Location, DeltaTime);
-        UpdateRotation(segmentEnd.Location, DeltaTime);
     }
 }
 
@@ -44,21 +71,51 @@ void USDTPathFollowingComponent::FollowPathSegment(float DeltaTime)
 void USDTPathFollowingComponent::SetMoveSegment(int32 segmentStartIndex)
 {
     const TArray<FNavPathPoint>& points = Path->GetPathPoints();
-    const FNavPathPoint& segmentStart = points[MoveSegmentStartIndex];
-
+    const FNavPathPoint& segmentStart = points[segmentStartIndex];
+    
     if (SDTUtils::HasJumpFlag(segmentStart) && FNavMeshNodeFlags(segmentStart.Flags).IsNavLink())
     {
-        // Handle starting jump
-    }
-    else
-    {
-        // Handle normal segments
-        MoveSegmentStartIndex = segmentStartIndex;
-        if (points.IsValidIndex(MoveSegmentStartIndex + 1))
+        AController* Controller = GetOwner<AController>();
+        if (Controller)
         {
-            MoveSegmentEndIndex = MoveSegmentStartIndex + 1;
-            CurrentDestination = Path->GetPathPointLocation(MoveSegmentEndIndex);
+            APawn* Pawn = Controller->GetPawn();
+            if (Pawn)
+            {
+                ACharacter* Character = Cast<ACharacter>(Pawn);
+                if (Character)
+                {
+                    UCharacterMovementComponent* CharacterMovementComponent = Character->GetCharacterMovement();
+                    if (CharacterMovementComponent)
+                    {
+                        const FNavPathPoint& segmentEnd = points[segmentStartIndex + 1];
+                        FVector LaunchVelocity;
+
+                        // Finds a launch trajectory for desired start, end locations. Returns false if it could not find a suitable velocity
+                        bool bSuccess = UGameplayStatics::SuggestProjectileVelocity_CustomArc(
+                            GetWorld(),
+                            LaunchVelocity,
+                            segmentStart.Location,
+                            segmentEnd.Location,
+                            0.0f,
+                            0.5f
+                        );
+
+                        if (bSuccess)
+                        {
+                            CharacterMovementComponent->Launch(LaunchVelocity);
+                        }
+                    }
+                }
+            }
         }
+    }
+    
+    // Same index logic for jump and normal segments
+    MoveSegmentStartIndex = segmentStartIndex;
+    if (points.IsValidIndex(segmentStartIndex + 1))
+    {
+        MoveSegmentEndIndex = segmentStartIndex + 1;
+        CurrentDestination = Path->GetPathPointLocation(MoveSegmentEndIndex);
     }
 }
 
