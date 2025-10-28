@@ -29,7 +29,9 @@ void ASDTBoatAIController::GoToBestTarget(float deltaTime)
 			if (actor != nullptr)
 			{
 				// TODO : Agents wants to move towards actor
-
+				
+				m_ReachedTarget = false;
+				MoveToActor(actor);
 				m_BoatState = BoatState::GO_TO_START_BRIDGE;
 			}
 
@@ -71,6 +73,8 @@ void ASDTBoatAIController::GoToBestTarget(float deltaTime)
 					// Check ASDTBoatOperator::GetDropLocation to get the location.
 					// Note that m_ReachedTarget should be set to FALSE if the move is valid!
 
+					m_ReachedTarget = false;
+					MoveToLocation(boatOperator->GetDropLocation());
 					break;
 				}
 			}
@@ -104,6 +108,8 @@ void ASDTBoatAIController::GoToBestTarget(float deltaTime)
 				if (actor != nullptr)
 				{
 					// TODO : Agents wants to move towards actor
+					m_ReachedTarget = false;
+					MoveToActor(actor);
 				}
 			}
 
@@ -134,6 +140,8 @@ void ASDTBoatAIController::NotifyUnloadComplete()
 	if (actor != nullptr)
 	{
 		// TODO : Agents wants to move towards actor
+		m_ReachedTarget = false;
+		MoveToActor(actor);
 	}
 }
 
@@ -143,6 +151,43 @@ void ASDTBoatAIController::ShowNavigationPath()
 	// Use the UPathFollowingComponent of the AIController to get the path
 	// This function is called while m_ReachedTarget is false 
 	// Check void ASDTBaseAIController::Tick for how it works.
+	if (m_ReachedTarget) return;
+
+	UPathFollowingComponent* PathFollowingComp = GetPathFollowingComponent();
+	if (!PathFollowingComp) return;
+
+	FNavPathSharedPtr Path = PathFollowingComp->GetPath();
+	if (!Path.IsValid()) return;
+
+	const TArray<FNavPathPoint>& points = Path->GetPathPoints();
+	if (points.Num() < 2) return;
+
+	for (int32 i = 0; i < points.Num(); ++i)
+	{
+		if (i < points.Num() - 1)
+		{
+			DrawDebugLine(
+				GetWorld(),
+				points[i].Location,
+				points[i + 1].Location,
+				FColor::Blue,
+				false,
+				-1.f,
+				0,
+				10.f
+			);
+		}
+
+		DrawDebugSphere(
+			GetWorld(),
+			points[i].Location,
+			10.f,
+			12,
+			FColor::Blue,
+			false,
+			-1.f
+		);
+	}
 }
 
 BoatState ASDTBoatAIController::GetBoatState()
