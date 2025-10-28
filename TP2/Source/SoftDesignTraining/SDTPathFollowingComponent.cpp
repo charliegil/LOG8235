@@ -1,19 +1,16 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "SDTPathFollowingComponent.h"
-#include "SoftDesignTraining.h"
 #include "SDTUtils.h"
-#include "SDTAIController.h"
-#include "GameFramework/CharacterMovementComponent.h"
 #include "NavigationSystem.h"
-#include "NavLinkCustomInterface.h"
 
 #include "DrawDebugHelpers.h"
 
 USDTPathFollowingComponent::USDTPathFollowingComponent(const FObjectInitializer& ObjectInitializer)
 {
-
+    
 }
+
 
 /**
 * This function is called every frame while the AI is following a path.
@@ -32,7 +29,11 @@ void USDTPathFollowingComponent::FollowPathSegment(float DeltaTime)
     else
     {
         // Update navigation along path (move along)
-        Super::FollowPathSegment(DeltaTime);
+        DrawDebugSphere(GetWorld(), segmentStart.Location, 40.f, 8, FColor::Red);
+        DrawDebugSphere(GetWorld(), segmentEnd.Location, 40.f, 8, FColor::Yellow);
+        
+        MoveTowardsTarget(segmentEnd.Location, DeltaTime);
+        UpdateRotation(segmentEnd.Location, DeltaTime);
     }
 }
 
@@ -42,10 +43,7 @@ void USDTPathFollowingComponent::FollowPathSegment(float DeltaTime)
 */
 void USDTPathFollowingComponent::SetMoveSegment(int32 segmentStartIndex)
 {
-    Super::SetMoveSegment(segmentStartIndex);
-
     const TArray<FNavPathPoint>& points = Path->GetPathPoints();
-
     const FNavPathPoint& segmentStart = points[MoveSegmentStartIndex];
 
     if (SDTUtils::HasJumpFlag(segmentStart) && FNavMeshNodeFlags(segmentStart.Flags).IsNavLink())
@@ -55,8 +53,59 @@ void USDTPathFollowingComponent::SetMoveSegment(int32 segmentStartIndex)
     else
     {
         // Handle normal segments
-        // TODO figure out if there is anything to do here, seems weird
-        // Might be because the pedestrians only have one segment for now, if they had paths with multiple segments would it break?
+        MoveSegmentStartIndex = segmentStartIndex;
+        if (points.IsValidIndex(MoveSegmentStartIndex + 1))
+        {
+            MoveSegmentEndIndex = MoveSegmentStartIndex + 1;
+            CurrentDestination = Path->GetPathPointLocation(MoveSegmentEndIndex);
+        }
     }
 }
 
+void USDTPathFollowingComponent::MoveTowardsTarget(const FVector& TargetLocation, const float DeltaTime) const
+{
+    if (AActor* Owner = GetOwner())
+    {
+        if (const AController* Controller = Cast<AController>(Owner))
+        {
+            if (APawn* Pawn = Controller->GetPawn())
+            {
+                const FVector CurrentLocation = Pawn->GetActorLocation();
+                FVector Direction = (TargetLocation - CurrentLocation);
+                Direction.Z = 0.f;
+                const float DistanceToTarget = Direction.Size();
+                Direction.Normalize();
+
+                float Velocity = m_MaxSpeed;
+                if (DistanceToTarget < m_SlowDownDistance)
+                {
+                    const float SlowDownFactor = DistanceToTarget / m_SlowDownDistance;
+                    Velocity = FMath::Lerp(m_MinSpeed, m_MaxSpeed, SlowDownFactor);
+                }
+                
+                const FVector NewLocation = CurrentLocation + Direction * Velocity * DeltaTime;
+                Pawn->SetActorLocation(NewLocation, false); 
+            }
+        }
+    }
+}
+
+void USDTPathFollowingComponent::UpdateRotation(const FVector& TargetLocation, float DeltaTime) const
+{
+    if (AActor* Owner = GetOwner())
+    {
+        if (const AController* Controller = Cast<AController>(Owner))
+        {
+            if (APawn* Pawn = Controller->GetPawn())
+            {
+                const FRotator CurrentRotation = Pawn->GetActorRotation();
+                const FVector ToTarget = TargetLocation - Pawn->GetActorLocation();
+                const FRotator GoalRotation = ToTarget.Rotation();
+                FRotator FlatGoalRotation = FRotator(0.f, GoalRotation.Yaw, 0.f);
+                
+                const FRotator NewRotation = FMath::RInterpTo(CurrentRotation, FlatGoalRotation, DeltaTime, m_RotationRate);
+                Pawn->SetActorRotation(NewRotation);
+            }
+        }
+    }
+}

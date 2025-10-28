@@ -18,9 +18,24 @@ public:
     virtual void FollowPathSegment(float deltaTime) override;
     virtual void SetMoveSegment(int32 segmentStartIndex) override;
 
+    UPROPERTY(EditAnywhere)
+    float m_MaxSpeed = 500.f;
+
+    UPROPERTY(EditAnywhere)
+    float m_MinSpeed = 300.f;
+
+    UPROPERTY(EditAnywhere)
+    float m_SlowDownDistance = 200.f;
+
+    UPROPERTY(EditAnywhere)
+    float m_RotationRate = 8.f;
+
     UPROPERTY(BlueprintReadOnly)
     float jumProgress{ 0.f };
 
     UPROPERTY(BlueprintReadOnly)
     bool isJumping{ false };
+private:
+    void MoveTowardsTarget(const FVector& TargetLocation, const float DeltaTime) const;
+    void UpdateRotation(const FVector& TargetLocation, float DeltaTime) const;
 };
