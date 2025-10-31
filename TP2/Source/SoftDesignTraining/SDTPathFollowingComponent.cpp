@@ -15,7 +15,6 @@ USDTPathFollowingComponent::USDTPathFollowingComponent(const FObjectInitializer&
     
 }
 
-
 /**
 * This function is called every frame while the AI is following a path.
 * MoveSegmentStartIndex and MoveSegmentEndIndex specify where we are on the path point array.
@@ -29,25 +28,53 @@ void USDTPathFollowingComponent::FollowPathSegment(float DeltaTime)
     DrawDebugSphere(GetWorld(), segmentStart.Location, 40.f, 8, FColor::Red);
     DrawDebugSphere(GetWorld(), segmentEnd.Location, 40.f, 8, FColor::Yellow);
 
-    UpdateRotation(segmentEnd.Location, DeltaTime);  // update rotation has the same logic for jump
-    
-    if (SDTUtils::HasJumpFlag(segmentStart))
+// If we are on a jump segment
+if (SDTUtils::HasJumpFlag(segmentStart))
+{
+    // Update jump along path / nav link proxy
+    AController* controller = GetOwner<AController>();
+    if (!controller) return;
+
+    APawn* pawn = controller->GetPawn();
+    if (!pawn) return;
+
+    const float DistanceToEnd = FVector::Dist(pawn->GetActorLocation(), segmentEnd.Location);
+
+    if (DistanceToEnd < 200.0f)
     {
-        // Update jump along path / nav link proxy
-        AController* controller = GetOwner<AController>();
-        if (!controller) return;
+        // Check if player has landed
+        ACharacter* Character = Cast<ACharacter>(pawn);
+        if (!Character) return;
 
-        APawn* pawn = controller->GetPawn();
-        if (!pawn) return;
-
-        const float DistanceToEnd = FVector::Dist(pawn->GetActorLocation(), segmentEnd.Location);
-
-        if (DistanceToEnd < 100.0f)
+        UCharacterMovementComponent* MovementComponent = Character->GetCharacterMovement();
+        if (!MovementComponent) return;
+        
+        bool bHasLanded = MovementComponent->IsMovingOnGround();
+        
+        if (bHasLanded)
         {
             if (points.IsValidIndex(MoveSegmentEndIndex + 1))
             {
-                // We've landed, but there are still points left on the path
-                SetMoveSegment(MoveSegmentEndIndex);
+                // We've landed, now need to rotate before moving
+                FVector NextTarget = points[MoveSegmentEndIndex + 1].Location;
+                FVector Direction = NextTarget - pawn->GetActorLocation();
+                Direction.Z = 0.0f;
+                Direction.Normalize();
+                
+                // Update rotation toward next destination
+                UpdateRotation(NextTarget, DeltaTime);
+                
+                // Check if rotation is aligned
+                FVector Forward = pawn->GetActorForwardVector();
+                float DotProduct = FVector::DotProduct(Forward, Direction);
+                
+                const float threshold = 0.95f; // ~18 degrees tolerance
+                
+                // Once close enough to aligned rotation, allow player to move again
+                if (DotProduct >= threshold)
+                {
+                    SetMoveSegment(MoveSegmentEndIndex);
+                }
             }
             else
             {
@@ -57,10 +84,53 @@ void USDTPathFollowingComponent::FollowPathSegment(float DeltaTime)
             }
         }
     }
+}
+    // We are on a ground segment
     else
     {
-        // Update navigation along path (move along)
-        MoveTowardsTarget(segmentEnd.Location, DeltaTime);
+        AController* controller = GetOwner<AController>();
+        if (!controller) return;
+
+        APawn* pawn = controller->GetPawn();
+        if (!pawn) return;
+
+        const float DistanceToEnd = FVector::Dist(pawn->GetActorLocation(), segmentEnd.Location);
+
+        // If we are approaching a navlink, wait for rotation to be correct before jumping
+        if (DistanceToEnd < 100.0f && SDTUtils::HasJumpFlag(segmentEnd))
+        {
+            FVector JumpStart = segmentEnd.Location;
+            if (!points.IsValidIndex(MoveSegmentEndIndex + 1)) return;
+            
+            FVector JumpEnd = points[MoveSegmentEndIndex + 1].Location;
+            FVector JumpDirection = (JumpEnd - JumpStart).GetSafeNormal();
+
+            // Update rotation
+            UpdateRotation(JumpEnd, DeltaTime);
+            
+            // Check if rotation is close enough to target
+            FVector Forward = pawn->GetActorForwardVector();
+            float DotProduct = FVector::DotProduct(Forward, JumpDirection);
+            
+            // Once close enough, allow moving again
+            const float threshold = 0.99f;
+            if (DotProduct >= threshold)
+            {
+                // Update move segment
+                if (points.IsValidIndex(MoveSegmentEndIndex + 1))
+                {
+                    SetMoveSegment(MoveSegmentEndIndex);
+                }
+            }
+        }
+
+        // We are approaching a non navlink point on the ground, normal movement
+        else
+        {
+            // Update navigation along path (move along)
+            MoveTowardsTarget(segmentEnd.Location, DeltaTime);
+            UpdateRotation(segmentEnd.Location, DeltaTime);
+        }
     }
 }
 
@@ -72,7 +142,8 @@ void USDTPathFollowingComponent::SetMoveSegment(int32 segmentStartIndex)
 {
     const TArray<FNavPathPoint>& points = Path->GetPathPoints();
     const FNavPathPoint& segmentStart = points[segmentStartIndex];
-    
+
+    // If first point of segment is a jump navlink
     if (SDTUtils::HasJumpFlag(segmentStart) && FNavMeshNodeFlags(segmentStart.Flags).IsNavLink())
     {
         AController* Controller = GetOwner<AController>();
@@ -89,15 +160,16 @@ void USDTPathFollowingComponent::SetMoveSegment(int32 segmentStartIndex)
                     {
                         const FNavPathPoint& segmentEnd = points[segmentStartIndex + 1];
                         FVector LaunchVelocity;
-
+                        FVector PlayerLocation = Pawn->GetActorLocation();
+                        
                         // Finds a launch trajectory for desired start, end locations. Returns false if it could not find a suitable velocity
                         bool bSuccess = UGameplayStatics::SuggestProjectileVelocity_CustomArc(
                             GetWorld(),
                             LaunchVelocity,
-                            segmentStart.Location,
+                            PlayerLocation,
                             segmentEnd.Location,
                             0.0f,
-                            0.5f
+                            0.3f
                         );
 
                         if (bSuccess)
