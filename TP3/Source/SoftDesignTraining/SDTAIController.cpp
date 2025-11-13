@@ -10,6 +10,7 @@
 //#include "UnrealMathUtility.h"
 #include "SDTUtils.h"
 #include "EngineUtils.h"
+#include "SoftDesignTrainingGameMode.h"
 
 ASDTAIController::ASDTAIController(const FObjectInitializer& ObjectInitializer)
     : Super(ObjectInitializer.SetDefaultSubobjectClass<USDTPathFollowingComponent>(TEXT("PathFollowingComponent")))
@@ -279,6 +280,16 @@ void ASDTAIController::UpdatePlayerInteraction(float deltaTime)
 
     DrawDebugString(GetWorld(), FVector(0.f, 0.f, 5.f), debugString, GetPawn(), FColor::Orange, 0.f, false);
 
+    // Debug: sphère orange au-dessus des membres du groupe de poursuite
+    if (ASoftDesignTrainingGameMode* gm = Cast<ASoftDesignTrainingGameMode>(GetWorld()->GetAuthGameMode()))
+    {
+        if (gm->IsInChaseGroup(GetPawn()))
+        {
+            const FVector headPos = GetPawn()->GetActorLocation() + FVector(0.f, 0.f, 120.f);
+            DrawDebugSphere(GetWorld(), headPos, 20.f, 12, FColor::Orange, false, 0.f);
+        }
+    }
+
     DrawDebugCapsule(GetWorld(), detectionStartLocation + m_DetectionCapsuleHalfLength * selfPawn->GetActorForwardVector(), m_DetectionCapsuleHalfLength, m_DetectionCapsuleRadius, selfPawn->GetActorQuat() * selfPawn->GetActorUpVector().ToOrientationQuat(), FColor::Blue);
 }
 
@@ -353,11 +364,28 @@ void ASDTAIController::GetHightestPriorityDetectionHit(const TArray<FHitResult>&
 
 void ASDTAIController::UpdatePlayerInteractionBehavior(const FHitResult& detectionHit, float deltaTime)
 {
+    PlayerInteractionBehavior previousBehavior = m_PlayerInteractionBehavior;
     PlayerInteractionBehavior currentBehavior = GetCurrentPlayerInteractionBehavior(detectionHit);
 
     if (currentBehavior != m_PlayerInteractionBehavior)
     {
         m_PlayerInteractionBehavior = currentBehavior;
         AIStateInterrupted();
+
+        if (ASoftDesignTrainingGameMode* gm = Cast<ASoftDesignTrainingGameMode>(GetWorld()->GetAuthGameMode()))
+        {
+            // Entrée dans Chase -> ajouter au groupe
+            if (m_PlayerInteractionBehavior == PlayerInteractionBehavior_Chase &&
+                previousBehavior != PlayerInteractionBehavior_Chase)
+            {
+                gm->AddToChaseGroup(GetPawn());
+            }
+            // Sortie de Chase -> retirer du groupe
+            else if (previousBehavior == PlayerInteractionBehavior_Chase &&
+                     m_PlayerInteractionBehavior != PlayerInteractionBehavior_Chase)
+            {
+                gm->RemoveFromChaseGroup(GetPawn());
+            }
+        }
     }
 }

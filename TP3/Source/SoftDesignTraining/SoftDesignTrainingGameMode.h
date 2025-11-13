@@ -12,7 +12,16 @@ public:
 	ASoftDesignTrainingGameMode();
 
     virtual void StartPlay() override;
+
+    // Partie 2 - Groupe de poursuite (implémentation simple)
+    void AddToChaseGroup(AActor* Actor);
+    bool IsInChaseGroup(AActor* Actor) const;
+    void RemoveFromChaseGroup(AActor* Actor);
+    void DissolveChaseGroup();
+
+    const TSet<TWeakObjectPtr<AActor>>& GetChaseGroup() const { return m_ChaseGroup; }
+
+private:
+    UPROPERTY()
+    TSet<TWeakObjectPtr<AActor>> m_ChaseGroup;
 };
-
-
-

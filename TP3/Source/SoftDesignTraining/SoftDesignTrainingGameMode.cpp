@@ -24,3 +24,51 @@ void ASoftDesignTrainingGameMode::StartPlay()
 
     GetWorld()->Exec(GetWorld(), TEXT("stat fps"));
 }
+
+// Partie 2 - Groupe de poursuite (implémentation simple)
+void ASoftDesignTrainingGameMode::AddToChaseGroup(AActor* Actor)
+{
+    if (!Actor)
+    {
+        return;
+    }
+    m_ChaseGroup.Add(Actor);
+}
+
+bool ASoftDesignTrainingGameMode::IsInChaseGroup(AActor* Actor) const
+{
+    if (!Actor)
+    {
+        return false;
+    }
+
+    for (const TWeakObjectPtr<AActor>& WeakActor : m_ChaseGroup)
+    {
+        if (WeakActor.IsValid() && WeakActor.Get() == Actor)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+void ASoftDesignTrainingGameMode::DissolveChaseGroup()
+{
+    m_ChaseGroup.Empty();
+}
+
+void ASoftDesignTrainingGameMode::RemoveFromChaseGroup(AActor* Actor)
+{
+    if (!Actor)
+    {
+        return;
+    }
+
+    for (auto It = m_ChaseGroup.CreateIterator(); It; ++It)
+    {
+        if (!It->IsValid() || It->Get() == Actor)
+        {
+            It.RemoveCurrent();
+        }
+    }
+}

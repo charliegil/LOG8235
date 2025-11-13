@@ -8,6 +8,7 @@
 #include "SDTUtils.h"
 #include "DrawDebugHelpers.h"
 #include "SDTCollectible.h"
+#include "SoftDesignTrainingGameMode.h"
 
 
 ASoftDesignTrainingCharacter::ASoftDesignTrainingCharacter()
@@ -48,6 +49,15 @@ void ASoftDesignTrainingCharacter::OnBeginOverlap(UPrimitiveComponent* Overlappe
 void ASoftDesignTrainingCharacter::Die()
 {
     SetActorLocation(m_StartingPosition);
+
+    // Dissoudre le groupe si c'est le joueur qui meurt
+    if (Cast<ASoftDesignTrainingMainCharacter>(this))
+    {
+        if (ASoftDesignTrainingGameMode* gm = Cast<ASoftDesignTrainingGameMode>(GetWorld()->GetAuthGameMode()))
+        {
+            gm->DissolveChaseGroup();
+        }
+    }
 
     if (ASDTAIController* controller = Cast<ASDTAIController>(GetController()))
     {
