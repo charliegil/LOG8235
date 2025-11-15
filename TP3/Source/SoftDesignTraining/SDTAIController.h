@@ -17,6 +17,22 @@ class SOFTDESIGNTRAINING_API ASDTAIController : public ASDTBaseAIController
 public:
     ASDTAIController(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
+    // Behavior Tree (assigner dans l’éditeur)
+    UPROPERTY(EditDefaultsOnly, Category = AI)
+    class UBehaviorTree* BehaviorTreeAsset;
+
+    UPROPERTY(EditDefaultsOnly, Category = AI)
+    class UBlackboardData* BlackboardAsset;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = AI)
+    class UBlackboardComponent* BlackboardComp;
+
+    // Active/désactive le pilotage par BT (skip de la logique legacy si actif)
+    UPROPERTY(EditAnywhere, Category = AI)
+    bool bUseBehaviorTree = true;
+
+    virtual void OnPossess(APawn* InPawn) override;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = AI)
     float m_DetectionCapsuleHalfLength = 500.f;
 

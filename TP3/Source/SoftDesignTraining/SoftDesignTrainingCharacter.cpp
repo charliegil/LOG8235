@@ -50,11 +50,13 @@ void ASoftDesignTrainingCharacter::Die()
 {
     SetActorLocation(m_StartingPosition);
 
-    // Dissoudre le groupe si c'est le joueur qui meurt
+    // Dissoudre le groupe si c'est le joueur qui meurt + verrou temporaire pour éviter ré-adhésion instantanée
     if (Cast<ASoftDesignTrainingMainCharacter>(this))
     {
         if (ASoftDesignTrainingGameMode* gm = Cast<ASoftDesignTrainingGameMode>(GetWorld()->GetAuthGameMode()))
         {
+            // Verrou d'abord pour éviter tout ré-ajout le même tick, puis dissolution du groupe
+            gm->LockChaseGroup(2.0f);
             gm->DissolveChaseGroup();
         }
     }

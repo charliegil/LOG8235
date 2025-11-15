@@ -2,6 +2,7 @@
 
 #include "SoftDesignTrainingMainCharacter.h"
 #include "SoftDesignTraining.h"
+#include "SoftDesignTrainingGameMode.h"
 
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
@@ -31,12 +32,25 @@ void ASoftDesignTrainingMainCharacter::OnBeginOverlap(UPrimitiveComponent* Overl
     if (ASoftDesignTrainingCharacter* character = Cast<ASoftDesignTrainingCharacter>(OtherActor))
     {
         if (!IsPoweredUp())
+        {
             SetActorLocation(m_StartingPosition);
+            if (ASoftDesignTrainingGameMode* gm = Cast<ASoftDesignTrainingGameMode>(GetWorld()->GetAuthGameMode()))
+            {
+                // Verrouiller d'abord pour empêcher toute ré-adhésion dans le même tick
+                gm->LockChaseGroup(2.0f);
+                gm->DissolveChaseGroup();
+            }
+        }
     }
 }
 
 void ASoftDesignTrainingMainCharacter::OnCollectPowerUp()
 {
+    if (ASoftDesignTrainingGameMode* gm = Cast<ASoftDesignTrainingGameMode>(GetWorld()->GetAuthGameMode()))
+    {
+        gm->DissolveChaseGroup();
+    }
+
     m_IsPoweredUp = true;
 
     GetMesh()->SetMaterial(0, m_PoweredUpMaterial);

@@ -11,15 +11,68 @@
 #include "SDTUtils.h"
 #include "EngineUtils.h"
 #include "SoftDesignTrainingGameMode.h"
+#include "BehaviorTree/BehaviorTree.h"
+#include "BehaviorTree/BlackboardComponent.h"
+#include "BehaviorTree/BlackboardData.h"
+#include "UObject/ConstructorHelpers.h"
 
 ASDTAIController::ASDTAIController(const FObjectInitializer& ObjectInitializer)
     : Super(ObjectInitializer.SetDefaultSubobjectClass<USDTPathFollowingComponent>(TEXT("PathFollowingComponent")))
 {
     m_PlayerInteractionBehavior = PlayerInteractionBehavior_Collect;
+
+    // Charger automatiquement le BT/BB si non assignés dans l’éditeur (chemins selon tes assets)
+    // Modifie ces chemins si tu as placé les assets ailleurs.
+    if (!BehaviorTreeAsset)
+    {
+        static ConstructorHelpers::FObjectFinder<UBehaviorTree> BTObj(TEXT("/Game/StarterContent/ArtificialIntelligence/BT_SDT_AI.BT_SDT_AI"));
+        if (BTObj.Succeeded())
+        {
+            BehaviorTreeAsset = BTObj.Object;
+        }
+    }
+
+    if (!BlackboardAsset)
+    {
+        static ConstructorHelpers::FObjectFinder<UBlackboardData> BBObj(TEXT("/Game/StarterContent/ArtificialIntelligence/BB_SDT_AI.BB_SDT_AI"));
+        if (BBObj.Succeeded())
+        {
+            BlackboardAsset = BBObj.Object;
+        }
+    }
+}
+
+void ASDTAIController::OnPossess(APawn* InPawn)
+{
+    Super::OnPossess(InPawn);
+
+    if (!bUseBehaviorTree)
+    {
+        return;
+    }
+
+    // Initialiser le Blackboard et lancer le BT
+    if (BlackboardAsset)
+    {
+        UseBlackboard(BlackboardAsset, BlackboardComp);
+    }
+
+    if (BehaviorTreeAsset)
+    {
+        RunBehaviorTree(BehaviorTreeAsset);
+    }
+
+    // Ecrire SelfActor dans le Blackboard (utile pour certains BT/Tasks)
+    if (BlackboardComp && InPawn)
+    {
+        BlackboardComp->SetValueAsObject(TEXT("SelfActor"), InPawn);
+    }
 }
 
 void ASDTAIController::GoToBestTarget(float deltaTime)
 {
+    // BT ONLY: logique legacy désactivée volontairement (Behavior Tree pilote tout).
+    /*
     switch (m_PlayerInteractionBehavior)
     {
     case PlayerInteractionBehavior_Collect:
@@ -40,6 +93,8 @@ void ASDTAIController::GoToBestTarget(float deltaTime)
 
         break;
     }
+    */
+    return;
 }
 
 void ASDTAIController::MoveToRandomCollectible()
@@ -232,6 +287,12 @@ void ASDTAIController::ShowNavigationPath()
 
 void ASDTAIController::UpdatePlayerInteraction(float deltaTime)
 {
+    // BT ONLY: toute la logique legacy de détection/état est commentée pour garantir que le BT commande.
+    /*
+    // Si le Behavior Tree pilote, on ignore la logique legacy
+    if (bUseBehaviorTree && BehaviorTreeAsset)
+        return;
+
     //finish jump before updating AI state
     if (AtJumpSegment)
         return;
@@ -291,6 +352,8 @@ void ASDTAIController::UpdatePlayerInteraction(float deltaTime)
     }
 
     DrawDebugCapsule(GetWorld(), detectionStartLocation + m_DetectionCapsuleHalfLength * selfPawn->GetActorForwardVector(), m_DetectionCapsuleHalfLength, m_DetectionCapsuleRadius, selfPawn->GetActorQuat() * selfPawn->GetActorUpVector().ToOrientationQuat(), FColor::Blue);
+    */
+    return;
 }
 
 bool ASDTAIController::HasLoSOnHit(const FHitResult& hit)
@@ -372,6 +435,9 @@ void ASDTAIController::UpdatePlayerInteractionBehavior(const FHitResult& detecti
         m_PlayerInteractionBehavior = currentBehavior;
         AIStateInterrupted();
 
+        // BT ONLY: gestion de groupe déplacée dans le Service (tout-ou-rien)
+        // Legacy conservé en commentaire pour référence:
+        /*
         if (ASoftDesignTrainingGameMode* gm = Cast<ASoftDesignTrainingGameMode>(GetWorld()->GetAuthGameMode()))
         {
             // Entrée dans Chase -> ajouter au groupe
@@ -380,12 +446,13 @@ void ASDTAIController::UpdatePlayerInteractionBehavior(const FHitResult& detecti
             {
                 gm->AddToChaseGroup(GetPawn());
             }
-            // Sortie de Chase -> retirer du groupe
+            // Sortie de Chase -> retirer du groupe (OBSOLETE - on ne retire pas individuellement)
             else if (previousBehavior == PlayerInteractionBehavior_Chase &&
                      m_PlayerInteractionBehavior != PlayerInteractionBehavior_Chase)
             {
                 gm->RemoveFromChaseGroup(GetPawn());
             }
         }
+        */
     }
 }
