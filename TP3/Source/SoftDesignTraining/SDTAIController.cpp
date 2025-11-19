@@ -15,6 +15,7 @@
 #include "BehaviorTree/BlackboardComponent.h"
 #include "BehaviorTree/BlackboardData.h"
 #include "UObject/ConstructorHelpers.h"
+#include "AIUpdateSubsystem.h"
 
 ASDTAIController::ASDTAIController(const FObjectInitializer& ObjectInitializer)
     : Super(ObjectInitializer.SetDefaultSubobjectClass<USDTPathFollowingComponent>(TEXT("PathFollowingComponent")))
@@ -46,6 +47,11 @@ void ASDTAIController::OnPossess(APawn* InPawn)
 {
     Super::OnPossess(InPawn);
 
+    if (UAIUpdateSubsystem* Subsystem = GetWorld()->GetSubsystem<UAIUpdateSubsystem>())
+    {
+        Subsystem->RegisterAgent(this);
+    }
+
     if (!bUseBehaviorTree)
     {
         return;
@@ -67,6 +73,54 @@ void ASDTAIController::OnPossess(APawn* InPawn)
     {
         BlackboardComp->SetValueAsObject(TEXT("SelfActor"), InPawn);
     }
+}
+
+void ASDTAIController::UpdateAIWithBudget(float DeltaTime, bool bInsideBudget)
+{
+    // Si notre budget est utilisé, on update pas cette instance d'IA
+    if (!bInsideBudget)
+        return;
+
+    APawn* MyPawn = GetPawn();
+    if (!MyPawn)
+        return;
+
+    // Vérifie si l'IA est visible
+    const bool bVisible = MyPawn->WasRecentlyRendered(0.1f);
+    static int32 UpdateCounter = 0;
+    UpdateCounter++;
+
+    bool bOnNavLink = IsOnNavLink();
+    // Si notre IA est invisible (et pas sur un navlink car cela demande un haut tickrate) elle est update 1 tick sur 3
+    if (!bVisible && !bOnNavLink)
+    {
+        static uint32 FrameCounter = 0;
+        FrameCounter++;
+        if (FrameCounter % 3 != 0)
+            return;
+    }
+
+    // Switch case qui selectionne quelles taches sont éxécutés sur cet update. On a 3 taches possibles 
+    switch (m_UpdateStep)
+    {
+    case 0:
+        UpdatePlayerInteraction(DeltaTime);
+        break;
+
+    case 1:
+        if (m_ReachedTarget)
+        {
+            m_ReachedTarget = false;
+            GoToBestTarget(DeltaTime);
+        }
+        break;
+
+    case 2:
+        ShowNavigationPath();
+        break;
+    }
+    // Passe à l'étape suivante
+    m_UpdateStep = (m_UpdateStep + 1) % 3;
 }
 
 void ASDTAIController::GoToBestTarget(float deltaTime)
@@ -455,4 +509,24 @@ void ASDTAIController::UpdatePlayerInteractionBehavior(const FHitResult& detecti
         }
         */
     }
+}
+
+
+// Helper Function qui vérifie si on est sur un navlink
+bool ASDTAIController::IsOnNavLink() const
+{
+    const UPathFollowingComponent* PFC = Cast<UPathFollowingComponent>(GetPathFollowingComponent());
+    if (!PFC)
+        return false;
+
+    if (PFC->HasStartedNavLinkMove())
+        return true;
+
+    if (PFC->IsCurrentSegmentNavigationLink())
+        return true;
+
+    if (PFC->GetCurrentCustomLinkOb() != nullptr)
+        return true;
+
+    return false;
 }

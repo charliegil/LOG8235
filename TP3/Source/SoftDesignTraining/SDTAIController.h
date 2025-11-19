@@ -79,12 +79,14 @@ protected:
     void PlayerInteractionLoSUpdate();
     void OnPlayerInteractionNoLosDone();
     void OnMoveToTarget();
+    bool IsOnNavLink() const;
 
 public:
     virtual void OnMoveCompleted(FAIRequestID RequestID, const FPathFollowingResult& Result) override;
     void RotateTowards(const FVector& targetLocation);
     void SetActorLocation(const FVector& targetLocation);
     void AIStateInterrupted();
+    void UpdateAIWithBudget(float DeltaTime, bool bIsInsideBudget);
 
 private:
     virtual void GoToBestTarget(float deltaTime) override;
@@ -97,4 +99,6 @@ protected:
     FRotator m_ObstacleAvoidanceRotation;
     FTimerHandle m_PlayerInteractionNoLosTimer;
     PlayerInteractionBehavior m_PlayerInteractionBehavior;
+    bool bSkipThisFrame = false;
+    int32 m_UpdateStep = 0;
 };

@@ -6,7 +6,8 @@
 ASDTBaseAIController::ASDTBaseAIController(const FObjectInitializer& ObjectInitializer)
     :Super(ObjectInitializer)
 {
-    PrimaryActorTick.bCanEverTick = true;
+    // On desactive le tick par défaut pour ne pas override celui de la partie 4
+    PrimaryActorTick.bCanEverTick = false;
     PrimaryActorTick.bStartWithTickEnabled = true;
     m_ReachedTarget = true;
 }
