@@ -18,6 +18,16 @@
  * - HasLOS / IsPlayerPoweredUp: SetValueAsBool(true/false). "Is Set" sera vrai si true, faux si false.
  * - LKP: écrit quand LOS vrai, laisse expirer via LKPValidUntil.
  */
+
+enum ChaseState
+{
+	Fleeing = 0,
+	Chasing = 1,
+	LKP = 2, 
+	Patrolling = 3,
+	Holding = 4,
+};
+
 UCLASS()
 class SOFTDESIGNTRAINING_API UBTService_SDT_Sense : public UBTService
 {
@@ -61,4 +71,6 @@ private:
 
 	// Temps courant monde
 	static float Now(const UWorld* World);
+
+	ChaseState m_ChaseState{ChaseState::Patrolling};
 };

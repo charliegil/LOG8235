@@ -127,40 +127,90 @@ void UBTService_SDT_Sense::TickNode(UBehaviorTreeComponent& OwnerComp, uint8* No
 		BB->ClearValue(KEY_HasLOS);
 	}
 
-	// Choix de la TargetLocation selon l'état global
 	FString DebugState;
+	ASoftDesignTrainingGameMode* GM = Cast<ASoftDesignTrainingGameMode>(World->GetAuthGameMode());
+
 	if (bPoweredUp)
 	{
-		// Flee
-		FVector FleeLoc = FVector::ZeroVector;
-		if (ChooseBestFleeLocation(World, SelfLoc, FleeLoc))
-		{
-			BB->SetValueAsVector(KEY_TargetLocation, FleeLoc);
-			if (bDrawDebug) DrawDebugSphere(World, FleeLoc, 20.f, 12, FColor::Orange, false, Interval);
-		}
-		DebugState = TEXT("Flee");
+		m_ChaseState = ChaseState::Fleeing;
 	}
 	else
 	{
 		if (bHasLOS)
 		{
-			// Chase (LOS): Move To sur PlayerActor, pas besoin d'une TargetLocation
-			BB->ClearValue(KEY_TargetLocation);
-			DebugState = TEXT("Chase");
-		}
-		else
-		{
-			// Perte de vue: LKP valide ?
-			const float ValidUntil = BB->GetValueAsFloat(KEY_LKPValidUntil);
-			if (ValidUntil > Now(World))
+			if (GM != nullptr)
 			{
-				const FVector Lkp = BB->GetValueAsVector(KEY_LKP);
-				BB->SetValueAsVector(KEY_TargetLocation, Lkp);
-				if (bDrawDebug) DrawDebugSphere(World, Lkp, 16.f, 8, FColor::Purple, false, Interval);
-				DebugState = TEXT("Chase");
+				GM->AddToChaseGroup(SelfPawn);
+				if (GM->ShouldChasePlayer(SelfPawn))
+				{
+					m_ChaseState = ChaseState::Chasing;
+				}
+				else
+				{
+					m_ChaseState = ChaseState::Holding;
+				}
 			}
 			else
 			{
+				m_ChaseState = ChaseState::Patrolling;
+			}
+		}
+		else
+		{
+			if (GM != nullptr)
+			{
+				if (GM->IsInChaseGroup(SelfPawn))
+				{
+					if (GM->ShouldInvestigateLkp(SelfPawn, Now(GetWorld())))
+					{
+						m_ChaseState = ChaseState::LKP;
+					}
+					else
+					{
+						m_ChaseState = ChaseState::Holding;
+					}
+				}
+				else
+				{
+					m_ChaseState = ChaseState::Patrolling;
+				}
+				
+			}
+			else
+			{
+				m_ChaseState = ChaseState::Patrolling;
+			}
+		}
+		if (GM != nullptr)
+		{
+			if (GM->IsInChaseGroup(SelfPawn))
+			{
+				const FVector ownLkp = BB->GetValueAsVector(KEY_LKP);
+				const float validUntil = BB->GetValueAsFloat(KEY_LKPValidUntil);
+				GM->UpdateGroupLkp(ownLkp, validUntil, SelfPawn);
+			}
+			
+			GM->UpdateChaseGroupLOS(SelfPawn, bHasLOS, PlayerLoc);
+		}
+			
+	}
+
+	switch (m_ChaseState)
+	{
+		case ChaseState::Chasing:
+			{
+				BB->ClearValue(KEY_TargetLocation);
+				DebugState = TEXT("Chase");
+				break;
+			}
+		case ChaseState::Patrolling:
+			{
+				if (GM != nullptr && GM->IsInChaseGroup(SelfPawn))
+				{
+					m_ChaseState = ChaseState::Holding;
+					break;
+				}
+				
 				// Collect (random non cooldown)
 				FVector CollectLoc = FVector::ZeroVector;
 				if (ChooseCollectible(World, CollectLoc))
@@ -169,31 +219,70 @@ void UBTService_SDT_Sense::TickNode(UBehaviorTreeComponent& OwnerComp, uint8* No
 					if (bDrawDebug) DrawDebugSphere(World, CollectLoc, 14.f, 8, FColor::Yellow, false, Interval);
 				}
 				DebugState = TEXT("Collect");
+				break;
 			}
-		}
+		case ChaseState::Fleeing:
+			{
+				FVector FleeLoc = FVector::ZeroVector;
+				if (ChooseBestFleeLocation(World, SelfLoc, FleeLoc))
+				{
+					BB->SetValueAsVector(KEY_TargetLocation, FleeLoc);
+					if (bDrawDebug) DrawDebugSphere(World, FleeLoc, 20.f, 12, FColor::Orange, false, Interval);
+				}
+				DebugState = TEXT("Flee");
+				break;
+			}
+		case ChaseState::LKP:
+			{
+				FVector Lkp = FVector::ZeroVector;
+				if (GM != nullptr)
+				{
+					Lkp = GM->GetNewestLkp();
+				}
+
+				if (Lkp == FVector::ZeroVector) // Lost player
+				{
+					// TODO : maybe go back to patrolling
+					BB->ClearValue(KEY_LKPValidUntil);
+					BB->ClearValue(KEY_LKP);
+				}
+				else
+				{
+					BB->SetValueAsVector(KEY_TargetLocation, Lkp);
+					if (bDrawDebug) DrawDebugSphere(World, Lkp, 16.f, 8, FColor::Purple, false, Interval);
+					DebugState = TEXT("LKP");
+				}
+				break;
+			}
+	case ChaseState::Holding:
+			{
+				FVector holdPosition = FVector::ZeroVector;
+				if (GM != nullptr)
+				{
+					holdPosition = GM->GetHoldingPosition(SelfPawn);
+					// TODO :add a way to be designed to chase
+				}
+
+				if (holdPosition == FVector::ZeroVector)
+				{
+					// Error go back to patrolling
+					m_ChaseState = ChaseState::Patrolling;
+					break;
+				}
+				
+				BB->SetValueAsVector(KEY_TargetLocation, holdPosition);
+				if (bDrawDebug) DrawDebugSphere(World, holdPosition, 16.f, 8, FColor::Red, false, Interval);
+				DebugState = TEXT("Hold");
+				
+				
+				break;
+			}
 	}
 
-	// Gestion du groupe (Partie 2) - tout ou rien:
-	// - Ajout si on entre en Chase (pas de retrait individuel)
-	// - Dissolution gérée par GameMode: PowerUp, mort, ou perte de vue de tous (timer)
-	if (ASoftDesignTrainingGameMode* GM = Cast<ASoftDesignTrainingGameMode>(World->GetAuthGameMode()))
+	if (GM->IsInChaseGroup(SelfPawn))
 	{
-		const bool bIsChasing = (DebugState == TEXT("Chase"));
-
-		if (bIsChasing)
-		{
-			GM->AddToChaseGroup(SelfPawn);
-		}
-
-		// Propager l'état de LOS de ce membre (utilisé pour dissoudre si plus aucun n'a la vue)
-		GM->UpdateChaseGroupLOS(SelfPawn, bHasLOS);
-
-		// Affichage: sphère orange au-dessus des membres du groupe
-		if (GM->IsInChaseGroup(SelfPawn))
-		{
-			const FVector HeadPos = SelfPawn->GetActorLocation() + FVector(0.f, 0.f, 120.f);
-			DrawDebugSphere(World, HeadPos, 20.f, 12, FColor::Orange, false, Interval);
-		}
+		const FVector HeadPos = SelfPawn->GetActorLocation() + FVector(0.f, 0.f, 120.f);
+		DrawDebugSphere(World, HeadPos, 20.f, 12, FColor::Orange, false, Interval);
 	}
 
 	// Debug état au-dessus de la tête (comme legacy)

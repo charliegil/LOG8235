@@ -16,6 +16,15 @@ ASoftDesignTrainingGameMode::ASoftDesignTrainingGameMode()
 	{
 		DefaultPawnClass = PlayerPawnBPClass.Class;
 	}
+
+    TArray<AActor*> Found;
+    UGameplayStatics::GetAllActorsOfClass(GetWorld(), ATargetPoint::StaticClass(), Found);
+
+    for (AActor* Actor : Found)
+    {
+        ATargetPoint* TP = Cast<ATargetPoint>(Actor);
+        m_HoldingTargetPoints.Add(TP);
+    }
 }
 
 void ASoftDesignTrainingGameMode::StartPlay()
@@ -39,7 +48,16 @@ void ASoftDesignTrainingGameMode::AddToChaseGroup(AActor* Actor)
         return;
     }
 
+    // Prevent adding if already in group
+    if (m_ChaseGroup.Contains(Actor))
+    {
+        return;
+    }
+    
     m_ChaseGroup.Add(Actor);
+    
+    UpdateTargetPointsGroupHoldingPositions();
+    ReserveTargetPointsGroupHoldingPositions(Actor);
 }
 
 bool ASoftDesignTrainingGameMode::IsInChaseGroup(AActor* Actor) const
@@ -63,6 +81,7 @@ void ASoftDesignTrainingGameMode::DissolveChaseGroup()
 {
     m_ChaseGroup.Empty();
     m_ChaseGroupHasLOS.Empty();
+    m_Reservations.Empty();
 
     // Stopper le timer de dissolution "perte de vue totale"
     if (GetWorld())
@@ -95,8 +114,9 @@ void ASoftDesignTrainingGameMode::RemoveFromChaseGroup(AActor* Actor)
         }
     }
 }
+
 // Partie 2 - Mise à jour LOS groupe et dissolution "tout ou rien"
-void ASoftDesignTrainingGameMode::UpdateChaseGroupLOS(AActor* Actor, bool bHasLOS)
+void ASoftDesignTrainingGameMode::UpdateChaseGroupLOS(AActor* Actor, bool bHasLOS, const FVector& ActorLocation)
 {
     if (!Actor)
         return;
@@ -122,6 +142,8 @@ void ASoftDesignTrainingGameMode::UpdateChaseGroupLOS(AActor* Actor, bool bHasLO
         {
             GetWorld()->GetTimerManager().ClearTimer(m_GroupNoLOSTimer);
         }
+        
+        m_GroupKnownActorLocation = ActorLocation;
     }
     else
     {
@@ -166,4 +188,130 @@ void ASoftDesignTrainingGameMode::OnChaseGroupNoLOSTimer()
     {
         DissolveChaseGroup();
     }
+
+    m_GroupKnownActorLocation = FVector::ZeroVector;
 }
+
+bool ASoftDesignTrainingGameMode::ShouldChasePlayer(const AActor* Actor) const
+{
+    return m_ChasingActors.Contains(Actor);
+}
+
+bool ASoftDesignTrainingGameMode::ShouldInvestigateLkp(const AActor* Actor, float Now) const
+{
+    if (m_GroupKnownLkpValidUntil > Now)
+    {
+        if (m_ChasingActors.Contains(Actor))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+void ASoftDesignTrainingGameMode::UpdateGroupLkp(const FVector& Lkp, float validUntil, const AActor* Actor)
+{
+    if (validUntil > m_GroupKnownLkpValidUntil)
+    {
+        m_GroupKnownLkpValidUntil = validUntil;
+        m_GroupKnownLkp = Lkp;
+    }
+}
+
+FVector ASoftDesignTrainingGameMode::GetNewestLkp() const
+{
+    return m_GroupKnownLkp;
+}
+
+FVector ASoftDesignTrainingGameMode::GetHoldingPosition(const AActor* Actor)
+{
+    if (m_Reservations.Contains(Actor))
+    {
+        return m_Reservations[Actor]->GetActorLocation();
+    }
+    
+    return FVector::ZeroVector;
+}
+
+void ASoftDesignTrainingGameMode::UpdateCircularGroupHoldingPositions()
+{
+    int numberOfHoldingPositions = m_HoldingPositionsReserved.Num();
+    int i = 1;
+    
+    for (TPair<const AActor*, FVector>& Pair : m_HoldingPositionsReserved)
+    {
+        float angle = 2 * PI * i / numberOfHoldingPositions;
+        double x = m_GroupKnownActorLocation.X + 300 * cos(angle);
+        double y = m_GroupKnownActorLocation.Y + 300 * sin(angle);
+        double z = 0;
+        Pair.Value = FVector(x, y, z);
+        i++;
+    }
+}
+
+AActor* ASoftDesignTrainingGameMode::GetActorClosestToTargetPosition(const TArray<const AActor*>& actors, const FVector& TargetPosition) const
+{
+    AActor* ClosestActor = nullptr;
+    float ShortestDistSq = TNumericLimits<float>::Max(); 
+
+    for (const AActor* Actor : actors)
+    {
+        const float DistSq = FVector::DistSquared(Actor->GetActorLocation(), TargetPosition);
+
+        if (DistSq < ShortestDistSq)
+        {
+            ShortestDistSq = DistSq;
+            ClosestActor = const_cast<AActor*>(Actor);
+        }
+    }
+
+    return ClosestActor;
+}
+
+TArray<const ATargetPoint*> ASoftDesignTrainingGameMode::GetNClosestTargetPoints(const FVector& Origin, const TArray<const ATargetPoint*>& Points, const int N)
+{
+    if (N <= 0)
+        return {};
+    
+    TArray<const ATargetPoint*> SortedPoints = Points;
+    
+    Algo::Sort(SortedPoints, [Origin](const ATargetPoint* A, const ATargetPoint* B)
+    {
+        return FVector::DistSquared(A->GetActorLocation(), Origin)
+             < FVector::DistSquared(B->GetActorLocation(), Origin);
+    });
+
+
+    if (N >= SortedPoints.Num())
+        return SortedPoints;
+
+
+    SortedPoints.SetNum(N);
+    return SortedPoints;
+}
+
+void ASoftDesignTrainingGameMode::ReserveTargetPointsGroupHoldingPositions(const AActor* Actor)
+{
+    // Add reservation from m_NClosestTargetPoints for the actor
+    for (const ATargetPoint* TargetPoint : m_NClosestTargetPoints)
+    {
+        if (m_Reservations.FindKey(TargetPoint) == nullptr) // Free spot
+        {
+            m_Reservations.Add(Actor, TargetPoint);
+            return;
+        }
+    }
+
+    // No free spot available
+    m_ChasingActors.Add(Actor);
+}
+
+void ASoftDesignTrainingGameMode::UpdateTargetPointsGroupHoldingPositions()
+{
+    int N = FMath::Max(0, m_ChaseGroup.Num() - 1);
+    m_NClosestTargetPoints.Empty();
+    m_NClosestTargetPoints = GetNClosestTargetPoints(m_GroupKnownActorLocation, m_HoldingTargetPoints, N);
+}
+
+
+

@@ -1,6 +1,7 @@
 // Copyright 1998-2015 Epic Games, Inc. All Rights Reserved.
 #pragma once
 #include "GameFramework/GameMode.h"
+#include "Engine/TargetPoint.h"
 #include "SoftDesignTrainingGameMode.generated.h"
 
 UCLASS(minimalapi)
@@ -28,10 +29,17 @@ public:
 
     // Mise à jour de la visibilité (LOS) d’un membre du groupe.
     // Déclenche une dissolution différée si plus aucun membre n’a la LOS.
-    void UpdateChaseGroupLOS(AActor* Actor, bool bHasLOS);
+    void UpdateChaseGroupLOS(AActor* Actor, bool bHasLOS, const FVector& ActorLocation);
 
     // Empêche temporairement toute ré-adhésion (ex: après la mort du joueur)
     void LockChaseGroup(float Seconds);
+
+	bool ShouldChasePlayer(const AActor* Actor) const;
+	bool ShouldInvestigateLkp(const AActor* Actor, float Now) const;
+	void UpdateGroupLkp(const FVector& Lkp, float validUntil, const AActor* Actor);
+	FVector GetNewestLkp() const;
+	FVector GetHoldingPosition(const AActor* Actor);
+	
 
     const TSet<TWeakObjectPtr<AActor>>& GetChaseGroup() const { return m_ChaseGroup; }
 
@@ -55,4 +63,22 @@ private:
 
     // Callback pour dissoudre le groupe après le délai de perte de vue totale
     void OnChaseGroupNoLOSTimer();
+
+	void UpdateCircularGroupHoldingPositions();
+	void ReserveTargetPointsGroupHoldingPositions(const AActor* Actor);
+	void UpdateTargetPointsGroupHoldingPositions();
+	TMap<const ATargetPoint*, const AActor*> GetSelectedClosestPositions() const;
+
+	AActor* GetActorClosestToTargetPosition(const TArray<const AActor*>& actors, const FVector& TargetPosition) const;
+	static TArray<const ATargetPoint*> GetNClosestTargetPoints(const FVector& Origin, const TArray<const ATargetPoint*>& Points, const int N);
+
+	FVector m_GroupKnownActorLocation;
+	float m_GroupKnownLkpValidUntil;
+	FVector m_GroupKnownLkp;
+	TSet<const AActor*> m_ChasingActors;
+
+	TMap<const AActor*, FVector> m_HoldingPositionsReserved;
+	TMap<const AActor*, const ATargetPoint*> m_Reservations;
+	TArray<const ATargetPoint*> m_HoldingTargetPoints;
+	TArray<const ATargetPoint*> m_NClosestTargetPoints;
 };
