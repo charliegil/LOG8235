@@ -39,7 +39,7 @@ public:
 	void UpdateGroupLkp(const FVector& Lkp, float validUntil, const AActor* Actor);
 	FVector GetNewestLkp() const;
 	FVector GetHoldingPosition(const AActor* Actor);
-	
+	FVector GetChasePosition(const AActor* Actor) const;
 
     const TSet<TWeakObjectPtr<AActor>>& GetChaseGroup() const { return m_ChaseGroup; }
 
@@ -64,21 +64,17 @@ private:
     // Callback pour dissoudre le groupe après le délai de perte de vue totale
     void OnChaseGroupNoLOSTimer();
 
-	void UpdateCircularGroupHoldingPositions();
+	void UpdateCircularChasingLocation();
 	void ReserveTargetPointsGroupHoldingPositions(const AActor* Actor);
 	void UpdateTargetPointsGroupHoldingPositions();
-	TMap<const ATargetPoint*, const AActor*> GetSelectedClosestPositions() const;
-
-	AActor* GetActorClosestToTargetPosition(const TArray<const AActor*>& actors, const FVector& TargetPosition) const;
-	static TArray<const ATargetPoint*> GetNClosestTargetPoints(const FVector& Origin, const TArray<const ATargetPoint*>& Points, const int N);
 
 	FVector m_GroupKnownActorLocation;
 	float m_GroupKnownLkpValidUntil;
 	FVector m_GroupKnownLkp;
 	TSet<const AActor*> m_ChasingActors;
 
-	TMap<const AActor*, FVector> m_HoldingPositionsReserved;
 	TMap<const AActor*, const ATargetPoint*> m_Reservations;
+	TMap<const AActor*, FVector> m_CircularPositions;
 	TArray<const ATargetPoint*> m_HoldingTargetPoints;
 	TArray<const ATargetPoint*> m_NClosestTargetPoints;
 };

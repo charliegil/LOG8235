@@ -82,6 +82,9 @@ void ASoftDesignTrainingGameMode::DissolveChaseGroup()
     m_ChaseGroup.Empty();
     m_ChaseGroupHasLOS.Empty();
     m_Reservations.Empty();
+    m_NClosestTargetPoints.Empty();
+    m_ChasingActors.Empty();
+    m_CircularPositions.Empty();
 
     // Stopper le timer de dissolution "perte de vue totale"
     if (GetWorld())
@@ -144,6 +147,7 @@ void ASoftDesignTrainingGameMode::UpdateChaseGroupLOS(AActor* Actor, bool bHasLO
         }
         
         m_GroupKnownActorLocation = ActorLocation;
+        UpdateCircularChasingLocation();
     }
     else
     {
@@ -233,61 +237,45 @@ FVector ASoftDesignTrainingGameMode::GetHoldingPosition(const AActor* Actor)
     return FVector::ZeroVector;
 }
 
-void ASoftDesignTrainingGameMode::UpdateCircularGroupHoldingPositions()
+void ASoftDesignTrainingGameMode::UpdateCircularChasingLocation()
 {
-    int numberOfHoldingPositions = m_HoldingPositionsReserved.Num();
-    int i = 1;
-    
-    for (TPair<const AActor*, FVector>& Pair : m_HoldingPositionsReserved)
+    int Count = m_ChasingActors.Num();
+
+    float Radius = 350.f;
+
+    int i = 0;
+    for (const AActor* Actor : m_ChasingActors)
     {
-        float angle = 2 * PI * i / numberOfHoldingPositions;
-        double x = m_GroupKnownActorLocation.X + 300 * cos(angle);
-        double y = m_GroupKnownActorLocation.Y + 300 * sin(angle);
-        double z = 0;
-        Pair.Value = FVector(x, y, z);
+        float Angle = (2 * PI / Count) * i;
+
+        float X = m_GroupKnownActorLocation.X + Radius * FMath::Cos(Angle);
+        float Y = m_GroupKnownActorLocation.Y + Radius * FMath::Sin(Angle);
+        float Z = m_GroupKnownActorLocation.Z;
+
+        FVector ChasePosition(X, Y, Z);
+
+        if (m_CircularPositions.Contains(Actor))
+        {
+            m_CircularPositions[Actor] = ChasePosition;
+        }
+        else
+        {
+            m_CircularPositions.Add(Actor, ChasePosition);
+        }
+
         i++;
     }
 }
 
-AActor* ASoftDesignTrainingGameMode::GetActorClosestToTargetPosition(const TArray<const AActor*>& actors, const FVector& TargetPosition) const
+FVector ASoftDesignTrainingGameMode::GetChasePosition(const AActor* Actor) const
 {
-    AActor* ClosestActor = nullptr;
-    float ShortestDistSq = TNumericLimits<float>::Max(); 
-
-    for (const AActor* Actor : actors)
+    FVector out = FVector::ZeroVector;
+    if (m_CircularPositions.Contains(Actor))
     {
-        const float DistSq = FVector::DistSquared(Actor->GetActorLocation(), TargetPosition);
-
-        if (DistSq < ShortestDistSq)
-        {
-            ShortestDistSq = DistSq;
-            ClosestActor = const_cast<AActor*>(Actor);
-        }
+        out = m_CircularPositions[Actor];
     }
-
-    return ClosestActor;
-}
-
-TArray<const ATargetPoint*> ASoftDesignTrainingGameMode::GetNClosestTargetPoints(const FVector& Origin, const TArray<const ATargetPoint*>& Points, const int N)
-{
-    if (N <= 0)
-        return {};
     
-    TArray<const ATargetPoint*> SortedPoints = Points;
-    
-    Algo::Sort(SortedPoints, [Origin](const ATargetPoint* A, const ATargetPoint* B)
-    {
-        return FVector::DistSquared(A->GetActorLocation(), Origin)
-             < FVector::DistSquared(B->GetActorLocation(), Origin);
-    });
-
-
-    if (N >= SortedPoints.Num())
-        return SortedPoints;
-
-
-    SortedPoints.SetNum(N);
-    return SortedPoints;
+    return out;
 }
 
 void ASoftDesignTrainingGameMode::ReserveTargetPointsGroupHoldingPositions(const AActor* Actor)
@@ -309,8 +297,25 @@ void ASoftDesignTrainingGameMode::ReserveTargetPointsGroupHoldingPositions(const
 void ASoftDesignTrainingGameMode::UpdateTargetPointsGroupHoldingPositions()
 {
     int N = FMath::Max(0, m_ChaseGroup.Num() - 1);
+    if (N <= 0)
+        return;
+
     m_NClosestTargetPoints.Empty();
-    m_NClosestTargetPoints = GetNClosestTargetPoints(m_GroupKnownActorLocation, m_HoldingTargetPoints, N);
+    
+    m_NClosestTargetPoints = m_HoldingTargetPoints;
+
+    FVector playerLoc = m_GroupKnownActorLocation;
+    Algo::Sort(m_NClosestTargetPoints, [playerLoc](const ATargetPoint* A, const ATargetPoint* B)
+    {
+        return FVector::DistSquared(A->GetActorLocation(), playerLoc)
+             < FVector::DistSquared(B->GetActorLocation(), playerLoc);
+    });
+
+
+    if (N < m_NClosestTargetPoints.Num())
+    {
+        m_NClosestTargetPoints.SetNum(N);
+    }
 }
 
 

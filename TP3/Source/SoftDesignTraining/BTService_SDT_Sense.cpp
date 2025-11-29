@@ -199,8 +199,20 @@ void UBTService_SDT_Sense::TickNode(UBehaviorTreeComponent& OwnerComp, uint8* No
 	{
 		case ChaseState::Chasing:
 			{
-				BB->ClearValue(KEY_TargetLocation);
 				DebugState = TEXT("Chase");
+				FVector chasePos = FVector::ZeroVector;
+				if (GM != nullptr)
+				{
+					chasePos = GM->GetChasePosition(SelfPawn);
+				}
+
+				if (chasePos != FVector::ZeroVector)
+				{
+					BB->SetValueAsVector(KEY_TargetLocation, chasePos);
+					break;
+				}
+				
+				BB->ClearValue(KEY_TargetLocation);
 				break;
 			}
 		case ChaseState::Patrolling:
@@ -242,7 +254,6 @@ void UBTService_SDT_Sense::TickNode(UBehaviorTreeComponent& OwnerComp, uint8* No
 
 				if (Lkp == FVector::ZeroVector) // Lost player
 				{
-					// TODO : maybe go back to patrolling
 					BB->ClearValue(KEY_LKPValidUntil);
 					BB->ClearValue(KEY_LKP);
 				}
@@ -260,7 +271,6 @@ void UBTService_SDT_Sense::TickNode(UBehaviorTreeComponent& OwnerComp, uint8* No
 				if (GM != nullptr)
 				{
 					holdPosition = GM->GetHoldingPosition(SelfPawn);
-					// TODO :add a way to be designed to chase
 				}
 
 				if (holdPosition == FVector::ZeroVector)
@@ -273,7 +283,6 @@ void UBTService_SDT_Sense::TickNode(UBehaviorTreeComponent& OwnerComp, uint8* No
 				BB->SetValueAsVector(KEY_TargetLocation, holdPosition);
 				if (bDrawDebug) DrawDebugSphere(World, holdPosition, 16.f, 8, FColor::Red, false, Interval);
 				DebugState = TEXT("Hold");
-				
 				
 				break;
 			}
